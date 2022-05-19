@@ -6,6 +6,138 @@
 #include <fmt/format.h>
 
 namespace bee {
+namespace {
+template <typename Fx> void foreach_mesh(fbxsdk::FbxNode &node_, Fx fx) {
+  for (decltype(node_.GetNodeAttributeCount()) iNodeAttribute = 0;
+       iNodeAttribute < node_.GetNodeAttributeCount(); ++iNodeAttribute) {
+    auto nodeAttribute = node_.GetNodeAttributeByIndex(iNodeAttribute);
+    switch (const auto attributeType = nodeAttribute->GetAttributeType()) {
+    case fbxsdk::FbxNodeAttribute::EType::eMesh:
+      fx(*static_cast<fbxsdk::FbxMesh *>(nodeAttribute));
+      break;
+    default:
+      break;
+    }
+  }
+}
+
+template <typename Fx>
+void foreach_mesh_recursive(fbxsdk::FbxNode &node_, Fx fx) {
+  foreach_mesh(node_, fx);
+  for (decltype(node_.GetChildCount()) iChild = 0;
+       iChild < node_.GetChildCount(); ++iChild) {
+    foreach_mesh_recursive(*node_.GetChild(iChild), fx);
+  }
+}
+
+template <typename Fx> void foreach_mesh(fbxsdk::FbxScene &scene_, Fx fx) {
+  foreach_mesh_recursive(*scene_.GetRootNode(), fx);
+}
+
+void recalculate_x_shape_normals(fbxsdk::FbxMesh &mesh_,
+                                 fbxsdk::FbxGeometryBase &shape_) {
+  const auto nMeshPolygonVertices = mesh_.GetPolygonVertexCount();
+  const auto meshPolygonVertices = mesh_.GetPolygonVertices();
+  const auto nControlPoints = mesh_.GetControlPointsCount();
+  const auto controlPoints = mesh_.GetControlPoints();
+  const auto nPolygons = mesh_.GetPolygonCount();
+
+  const auto shapeControlPoints = shape_.GetControlPoints();
+  if (shape_.GetControlPointsCount() != nControlPoints) {
+    return;
+  }
+
+  const auto nElementSmoothing = shape_.GetElementSmoothingCount();
+  if (nElementSmoothing) {
+    const auto elementSmoothing = shape_.GetElementSmoothing(0);
+    assert(elementSmoothing->GetMappingMode() ==
+           fbxsdk::FbxLayerElement::EMappingMode::eByPolygon);
+  }
+
+  std::vector<fbxsdk::FbxVector4> normals(nControlPoints);
+
+  for (decltype(mesh_.GetPolygonCount()) iPolygon = 0;
+       iPolygon < mesh_.GetPolygonCount(); ++iPolygon) {
+    assert(mesh_.GetPolygonSize(iPolygon) == 3);
+    const auto start = mesh_.GetPolygonVertexIndex(iPolygon);
+    const auto iA = meshPolygonVertices[start + 0];
+    const auto iB = meshPolygonVertices[start + 1];
+    const auto iC = meshPolygonVertices[start + 2];
+    const auto a = shapeControlPoints[iA];
+    const auto b = shapeControlPoints[iB];
+    const auto c = shapeControlPoints[iC];
+    const auto ba = b - a;
+    const auto ca = c - a;
+    auto normal = ba.CrossProduct(ca);
+    // We calculate area weighted normals instead of the following unweighted
+    // method: normal[3] = 0.0; normal.Normalize();
+    normals[iA] += normal;
+    normals[iB] += normal;
+    normals[iC] += normal;
+  }
+
+  for (auto &normal : normals) {
+    normal[3] = 0.0;
+    normal.Normalize();
+  }
+
+  if (const auto elementNormal = shape_.GetElementNormal()) {
+    shape_.RemoveElementNormal(elementNormal);
+  }
+
+  const auto elementNormal = shape_.CreateElementNormal();
+  elementNormal->SetMappingMode(
+      fbxsdk::FbxLayerElement::EMappingMode::eByControlPoint);
+  elementNormal->SetReferenceMode(
+      fbxsdk::FbxLayerElement::EReferenceMode::eDirect);
+  auto &directArray = elementNormal->GetDirectArray();
+  directArray.Resize(normals.size());
+  for (decltype(normals.size()) iNormal = 0; iNormal < normals.size();
+       ++iNormal) {
+    directArray.SetAt(static_cast<int>(iNormal), normals[iNormal]);
+  }
+}
+
+void recalculate_shape_normals(fbxsdk::FbxMesh &mesh_,
+                               fbxsdk::FbxShape &shape_) {
+  return recalculate_x_shape_normals(mesh_, shape_);
+}
+
+void recalculate_mesh_base_normals(fbxsdk::FbxMesh &mesh_) {
+  return recalculate_x_shape_normals(mesh_, mesh_);
+}
+
+void recalculate_mesh_normals(fbxsdk::FbxMesh &mesh_) {
+  const auto nBlendShape =
+      mesh_.GetDeformerCount(fbxsdk::FbxDeformer::EDeformerType::eBlendShape);
+  if (!nBlendShape) {
+    return;
+  }
+
+  recalculate_mesh_base_normals(mesh_);
+
+  const auto nMeshPolygonVertices = mesh_.GetPolygonVertexCount();
+  const auto meshPolygonVertices = mesh_.GetPolygonVertices();
+  const auto controlPoints = mesh_.GetControlPoints();
+  for (std::remove_const_t<decltype(nBlendShape)> iBlendShape = 0;
+       iBlendShape < nBlendShape; ++iBlendShape) {
+    auto &blendShape = *static_cast<fbxsdk::FbxBlendShape *>(mesh_.GetDeformer(
+        iBlendShape, fbxsdk::FbxDeformer::EDeformerType::eBlendShape));
+    const auto nChannels = blendShape.GetBlendShapeChannelCount();
+    for (std::remove_const_t<decltype(nChannels)> iChannel = 0;
+         iChannel < nChannels; ++iChannel) {
+      auto &blendShapeChannel = *blendShape.GetBlendShapeChannel(iChannel);
+      for (decltype(blendShapeChannel.GetTargetShapeCount()) iTargetShape = 0;
+           iTargetShape < blendShapeChannel.GetTargetShapeCount();
+           ++iTargetShape) {
+        auto targetShape = blendShapeChannel.GetTargetShape(iTargetShape);
+        recalculate_shape_normals(mesh_, *targetShape);
+      }
+    }
+  }
+}
+} // namespace
+
 /// <summary>
 /// Node {} uses unsupported transform inheritance type '{}'.
 /// </summary>
@@ -128,6 +260,10 @@ void SceneConverter::_prepareScene() {
 
   // Trianglute the whole scene
   _fbxGeometryConverter.Triangulate(&_fbxScene, true);
+
+  foreach_mesh(_fbxScene, [this](fbxsdk::FbxMesh &mesh_) {
+    recalculate_mesh_normals(mesh_);
+  });
 
   // Split meshes per material
   _fbxGeometryConverter.SplitMeshesPerMaterial(&_fbxScene, true);
