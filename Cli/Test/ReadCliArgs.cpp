@@ -54,6 +54,7 @@ TEST_CASE("Read CLI arguments") {
              bee::ConvertOptions::UnitConversion::geometryLevel);
     CHECK_EQ(convertOptions->convertOptions.export_fbx_file_header_info, false);
     CHECK_EQ(convertOptions->convertOptions.export_raw_materials, false);
+    CHECK_EQ(convertOptions->convertOptions.deep_convert_axis_system, false);
   }
 
   {// Input file
@@ -190,6 +191,20 @@ CHECK_EQ(u8toexe(args->convertOptions.textureResolution.locations[0]), "/a"s);
 
   CHECK_EQ(read_cli_args_with_dummy_and("--export-raw-materials=false"sv)
                ->convertOptions.export_raw_materials,
+           false);
+}
+
+{ // --deep-convert-axis-system
+  CHECK_EQ(read_cli_args_with_dummy_and("--deep-convert-axis-system"sv)
+               ->convertOptions.deep_convert_axis_system,
+           true);
+
+  CHECK_EQ(read_cli_args_with_dummy_and("--deep-convert-axis-system=true"sv)
+               ->convertOptions.deep_convert_axis_system,
+           true);
+
+  CHECK_EQ(read_cli_args_with_dummy_and("--deep-convert-axis-system=false"sv)
+               ->convertOptions.deep_convert_axis_system,
            false);
 }
 

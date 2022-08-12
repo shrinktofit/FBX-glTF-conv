@@ -64,6 +64,8 @@ struct ConvertOptions {
 
   UnitConversion unitConversion = UnitConversion::geometryLevel;
 
+  bool deep_convert_axis_system = false;
+
   bool noFlipV = false;
 
   /// <summary>

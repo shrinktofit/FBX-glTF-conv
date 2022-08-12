@@ -99,7 +99,11 @@ fbxsdk::FbxGeometryConverter &SceneConverter::_getGeometryConverter() {
 
 void SceneConverter::_prepareScene() {
   // Convert axis system
-  fbxsdk::FbxAxisSystem::OpenGL.ConvertScene(&_fbxScene);
+  if (_options.deep_convert_axis_system) {
+    fbxsdk::FbxAxisSystem::OpenGL.DeepConvertScene(&_fbxScene);
+  } else {
+    fbxsdk::FbxAxisSystem::OpenGL.ConvertScene(&_fbxScene);
+  }
 
   // Convert system unit
   if (const auto fbxFileSystemUnit =

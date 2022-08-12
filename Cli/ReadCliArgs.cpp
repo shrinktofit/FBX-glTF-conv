@@ -134,6 +134,9 @@ std::optional<CliArgs> readCliArgs(std::span<std::string_view> args_) {
   options.add_options()("export-raw-materials", "Export raw materials.",
                         cxxopts::value<bool>()->default_value("false"));
 
+  options.add_options()("deep-convert-axis-system", "Deep convert axis system.",
+                        cxxopts::value<bool>()->default_value("false"));
+
   options.add_options()("verbose", "Verbose output.",
                         cxxopts::value<bool>()->default_value("false"));
   options.add_options()(
@@ -213,6 +216,11 @@ std::optional<CliArgs> readCliArgs(std::span<std::string_view> args_) {
     if (cliParseResult.count("export-raw-materials")) {
       cliArgs.convertOptions.export_raw_materials =
           cliParseResult["export-raw-materials"].as<bool>();
+    }
+
+    if (cliParseResult.count("deep-convert-axis-system")) {
+      cliArgs.convertOptions.deep_convert_axis_system =
+          cliParseResult["deep-convert-axis-system"].as<bool>();
     }
 
     if (cliParseResult.count("verbose")) {
