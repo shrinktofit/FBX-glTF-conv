@@ -436,7 +436,7 @@ SceneConverter::_createPrimitive(std::list<VertexBulk> &bulks_,
 
   for (const auto &bulk : bulks_) {
     auto [bufferViewData, bufferViewIndex] =
-        _glTFBuilder.createBufferView(bulk.stride * vertex_count_, 0, 0);
+        _glTFBuilder.createBufferView(bulk.stride * vertex_count_, 4, 0);
     auto &glTFBufferView =
         _glTFBuilder.get(&fx::gltf::Document::bufferViews)[bufferViewIndex];
     if (bulk.morphTargetHint) {

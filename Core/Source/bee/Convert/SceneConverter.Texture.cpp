@@ -308,6 +308,7 @@ void SceneConverter::_convertTextureUVTransform(
     // glm::radians(fbxRotationW);
     khrTextureTransformExtension["scale"] = Json::array(
         {static_cast<float>(glTFScale.x), static_cast<float>(glTFScale.y)});
+    _glTFBuilder.useExtension("KHR_texture_transform");
   }
 }
 

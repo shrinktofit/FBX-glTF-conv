@@ -287,26 +287,28 @@ SceneConverter::_extractSkinData(const fbxsdk::FbxMesh &fbx_mesh_) {
   }
 
   // Normalize weights
-  for (std::remove_const_t<decltype(nControlPoints)> iControlPoint = 0;
-       iControlPoint < nControlPoints; ++iControlPoint) {
-    const auto nChannels = channelsCount[iControlPoint];
-    bool zeroSum = true;
-    if (nChannels != 0) {
-      auto sum = static_cast<ResultWeightType>(0.0);
-      for (std::remove_const_t<decltype(nChannels)> iChannel = 0;
-           iChannel < nChannels; ++iChannel) {
-        sum += skinData.channels[iChannel].weights[iControlPoint];
-      }
-      if (sum != 0.0) {
-        zeroSum = false;
+  if (!skinData.channels.empty()) {
+    for (std::remove_const_t<decltype(nControlPoints)> iControlPoint = 0;
+         iControlPoint < nControlPoints; ++iControlPoint) {
+      const auto nChannels = channelsCount[iControlPoint];
+      bool zeroSum = true;
+      if (nChannels != 0) {
+        auto sum = static_cast<ResultWeightType>(0.0);
         for (std::remove_const_t<decltype(nChannels)> iChannel = 0;
              iChannel < nChannels; ++iChannel) {
-          skinData.channels[iChannel].weights[iControlPoint] /= sum;
+          sum += skinData.channels[iChannel].weights[iControlPoint];
+        }
+        if (sum != 0.0) {
+          zeroSum = false;
+          for (std::remove_const_t<decltype(nChannels)> iChannel = 0;
+               iChannel < nChannels; ++iChannel) {
+            skinData.channels[iChannel].weights[iControlPoint] /= sum;
+          }
         }
       }
-    }
-    if (zeroSum) {
-      skinData.channels[0].weights[iControlPoint] = 1.0;
+      if (zeroSum) {
+        skinData.channels[0].weights[iControlPoint] = 1.0;
+      }
     }
   }
 
@@ -326,7 +328,7 @@ SceneConverter::_createGLTFSkin(const NodeMeshesSkinData &skin_data_) {
       _glTFBuilder.createAccessor<fx::gltf::Accessor::Type::Mat4,
                                   fx::gltf::Accessor::ComponentType::Float,
                                   MeshSkinData::Bone::IBMSpreader>(
-          skin_data_.bones, 0, 0);
+          skin_data_.bones, 4, 0);
   auto &ibmAccessor =
       _glTFBuilder.get(&fx::gltf::Document::accessors)[ibmAccessorIndex];
   ibmAccessor.name = fmt::format("{}/InverseBindMatrices", skin_data_.name);

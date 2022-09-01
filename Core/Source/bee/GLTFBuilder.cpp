@@ -1,6 +1,6 @@
 
-#include <cassert>
 #include <bee/GLTFBuilder.h>
+#include <cassert>
 
 namespace bee {
 GLTFBuilder::GLTFBuilder() {
@@ -24,22 +24,30 @@ GLTFBuilder::BuildResult GLTFBuilder::build(BuildOptions options) {
        ++iBuffer) {
     const auto &bufferKeep = _bufferKeeps[iBuffer];
     std::uint32_t bufferByteLength = 0;
+    std::vector<std::uint32_t> offsets(bufferKeep.bufferViews.size());
+    auto offsetIndex = 0;
     for (const auto &bufferViewKeep : bufferKeep.bufferViews) {
-      bufferByteLength +=
+      const auto bufferViewKeepSize =
           static_cast<std::uint32_t>(bufferViewKeep.data.size());
+      const auto align = static_cast<std::uint32_t>(bufferViewKeep.align);
+      if (align && (bufferByteLength % align != 0)) {
+        bufferByteLength += (align - bufferByteLength % align);
+      }
+      offsets[offsetIndex++] = bufferByteLength;
+      bufferByteLength += bufferViewKeepSize;
     }
 
     std::vector<std::byte> bufferStorage(bufferByteLength);
-    std::uint32_t bufferOffset = 0;
+    offsetIndex = 0;
     for (const auto &bufferViewKeep : bufferKeep.bufferViews) {
       auto &bufferView = _glTFDocument.bufferViews[bufferViewKeep.index];
       auto bufferViewSize =
           static_cast<std::uint32_t>(bufferViewKeep.data.size());
-      bufferView.byteOffset = bufferOffset;
+      const auto bufferViewOffset = offsets[offsetIndex++];
+      bufferView.byteOffset = bufferViewOffset;
       bufferView.buffer = iBuffer;
-      std::memcpy(bufferStorage.data() + bufferOffset,
+      std::memcpy(bufferStorage.data() + bufferViewOffset,
                   bufferViewKeep.data.data(), bufferViewSize);
-      bufferOffset += bufferViewSize;
     }
     buildResult.buffers[iBuffer] = std::move(bufferStorage);
 
