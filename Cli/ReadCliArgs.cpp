@@ -85,6 +85,13 @@ struct ConvertOptionBindingTrait<
   constexpr static auto default_value = "1e-5";
 };
 
+template <>
+struct ConvertOptionBindingTrait<&bee::ConvertOptions::export_original_curves> {
+  constexpr static auto name = "export-original-curves";
+  constexpr static auto description = "Export original curves.";
+  constexpr static auto default_value = "false";
+};
+
 template <auto memberPtr> struct convert_option_binding_helper {};
 
 template <typename OptionType, OptionType bee::ConvertOptions::*optionMemberPtr>
@@ -189,6 +196,9 @@ std::optional<CliArgs> readCliArgs(std::span<std::string_view> args_) {
 
   add_cxx_option.template
   operator()<&bee::ConvertOptions::animation_scale_error_multiplier>();
+
+  add_cxx_option
+      .template operator()<&bee::ConvertOptions::export_original_curves>();
 
   options.add_options()(
       "texture-search-locations",
@@ -300,6 +310,9 @@ std::optional<CliArgs> readCliArgs(std::span<std::string_view> args_) {
 
     fetch_convert_option.template
     operator()<&bee::ConvertOptions::animation_scale_error_multiplier>();
+
+    fetch_convert_option
+        .template operator()<&bee::ConvertOptions::export_original_curves>();
 
     if (cliParseResult.count("export-fbx-file-header-info")) {
       cliArgs.convertOptions.export_fbx_file_header_info =

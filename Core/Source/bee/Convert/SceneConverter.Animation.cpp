@@ -1,10 +1,12 @@
 
+#include "./OriginalCurve.h"
 #include <bee/Convert/AnimationUtility.h>
 #include <bee/Convert/ConvertError.h>
 #include <bee/Convert/DirectSpreader.h>
 #include <bee/Convert/SceneConverter.h>
 #include <bee/Convert/fbxsdk/Spreader.h>
 #include <fmt/format.h>
+#include <glm/glm.hpp>
 
 namespace bee {
 /// <summary>
@@ -501,5 +503,65 @@ void SceneConverter::_extractTrsAnimation(fx::gltf::Animation &glTF_animation_,
                                     FbxVec3Spreader>(scales.values, 0, 0);
     addChannel(scales, "scale", valueAccessorIndex);
   }
+
+  if (_options.export_original_curves) {
+    _extractTrsAnimationNew(glTF_animation_, fbx_anim_layer_, fbx_node_,
+                            anim_range_);
+  }
+}
+
+struct vec3_keyframe {
+  double time = 0.0;
+  glm::dvec3 value;
+};
+
+struct vec3_curve {
+  std::vector<vec3_keyframe> keyframes;
+};
+
+vec3_curve convert_fbx_vec3_curve(
+    const std::array<fbxsdk::FbxAnimCurve *, 3> &fbx_vec3_curves_,
+    const AnimRange &anim_range_,
+    double epsilon_) {
+  const auto nFrames = anim_range_.frames_count();
+  Track<fbxsdk::FbxVector4> keyframes;
+  for (std::remove_const_t<decltype(nFrames)> iFrame = 0; iFrame < nFrames;
+       ++iFrame) {
+    const auto time = anim_range_.at(iFrame);
+    const auto [x, y, z] = fbx_vec3_curves_;
+    const auto xval = x->Evaluate(time);
+    const auto yval = y->Evaluate(time);
+    const auto zval = z->Evaluate(time);
+    keyframes.add(time.GetSecondDouble(), fbxsdk::FbxVector4{xval, yval, zval});
+  }
+  keyframes.reduceLinearKeys(epsilon_);
+
+  vec3_curve curve;
+  const auto nResultKeyframes = keyframes.times.size();
+  for (std::remove_const_t<decltype(nResultKeyframes)> iKeyframe = 0;
+       iKeyframe < nResultKeyframes; ++iKeyframe) {
+    const auto val = keyframes.values[iKeyframe];
+    curve.keyframes.push_back(
+        {keyframes.times[iKeyframe], glm::dvec3(val[0], val[1], val[2])});
+  }
+  return curve;
+}
+
+void convert_fbx_rotation_curve(
+    const std::array<fbxsdk::FbxAnimCurve *, 3> &fbx_rotation_curves_) {
+}
+
+void SceneConverter::_extractTrsAnimationNew(
+    fx::gltf::Animation &glTF_animation_,
+    fbxsdk::FbxAnimLayer &fbx_anim_layer_,
+    fbxsdk::FbxNode &fbx_node_,
+    const AnimRange &anim_range_) {
+  const auto glTFNodeIndex = _getNodeMap(fbx_node_);
+  if (!glTFNodeIndex) {
+    return;
+  }
+
+  extract_original_curves(glTF_animation_, *glTFNodeIndex, fbx_anim_layer_,
+                          fbx_node_, anim_range_);
 }
 } // namespace bee

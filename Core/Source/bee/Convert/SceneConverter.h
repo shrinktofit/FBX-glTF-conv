@@ -1,6 +1,7 @@
 
 #pragma once
 
+#include "./AnimRange.h"
 #include <bee/Convert/FbxMeshVertexLayout.h>
 #include <bee/Convert/GLTFSamplerHash.h>
 #include <bee/Convert/NeutralType.h>
@@ -38,7 +39,6 @@ public:
   void convert();
 
 private:
-
   std::map<fbxsdk::FbxNode *, std::string> nodeMeshMap;
 
   struct FbxBlendShapeData {
@@ -160,39 +160,6 @@ private:
       channels.emplace_back(Channel{name_, type_, component_type_, in_offset_,
                                     stride, writer_, target_});
       stride += countBytes(type_, component_type_);
-    }
-  };
-
-  struct AnimRange {
-  private:
-    fbxsdk::FbxTime::EMode timeMode;
-    fbxsdk::FbxLongLong firstFrame;
-    /// <summary>
-    /// Last frame(inclusive).
-    /// </summary>
-    fbxsdk::FbxLongLong lastFrame;
-
-  public:
-    AnimRange(fbxsdk::FbxTime::EMode time_mode_,
-              fbxsdk::FbxLongLong first_frame_,
-              fbxsdk::FbxLongLong last_frame_)
-        : timeMode(time_mode_), firstFrame(first_frame_),
-          lastFrame(last_frame_) {
-    }
-
-    fbxsdk::FbxLongLong frames_count() const {
-      return lastFrame - firstFrame + 1;
-    }
-
-    fbxsdk::FbxDouble first_frame_seconds() const {
-      return at(0).GetSecondDouble();
-    }
-
-    fbxsdk::FbxTime at(fbxsdk::FbxLongLong frame_index_) const {
-      const auto fbxFrame = firstFrame + frame_index_;
-      fbxsdk::FbxTime fbxTime;
-      fbxTime.SetFrame(fbxFrame, timeMode);
-      return fbxTime;
     }
   };
 
@@ -493,5 +460,10 @@ private:
                             fbxsdk::FbxAnimLayer &fbx_anim_layer_,
                             fbxsdk::FbxNode &fbx_node_,
                             const AnimRange &anim_range_);
+
+  void _extractTrsAnimationNew(fx::gltf::Animation &glTF_animation_,
+                               fbxsdk::FbxAnimLayer &fbx_anim_layer_,
+                               fbxsdk::FbxNode &fbx_node_,
+                               const AnimRange &anim_range_);
 };
 } // namespace bee

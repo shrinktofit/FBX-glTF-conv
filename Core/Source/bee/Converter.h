@@ -82,6 +82,8 @@ struct ConvertOptions {
 
   float animation_scale_error_multiplier = 1e-5f;
 
+  bool export_original_curves = false;
+
   struct TextureResolution {
     bool disabled = false;
     std::vector<std::u8string> locations;
