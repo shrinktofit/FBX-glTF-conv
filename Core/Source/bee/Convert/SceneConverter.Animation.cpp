@@ -299,10 +299,11 @@ SceneConverter::_extractWeightsAnimation(
     const AnimRange &anim_range_) {
   // Zero check
   bool hasWeightAnimation = false;
-  for (const auto &[blendShapeIndex, blendShapeChannelIndex, name,
-                    deformPercent, targetShapes] : blend_shape_data_.channels) {
-    const auto shapeChannel = fbx_mesh_.GetShapeChannel(
-        blendShapeIndex, blendShapeChannelIndex, &fbx_anim_layer_);
+  for (const auto &[blendShapeChannelIndex, name, deformPercent, targetShapes] :
+       blend_shape_data_.channels()) {
+    const auto shapeChannel =
+        fbx_mesh_.GetShapeChannel(blend_shape_data_.blend_shape_index(),
+                                  blendShapeChannelIndex, &fbx_anim_layer_);
     if (shapeChannel) {
       hasWeightAnimation = true;
       break;
@@ -317,12 +318,7 @@ SceneConverter::_extractWeightsAnimation(
   MorphAnimation morphAnimation;
 
   using TargetWeightsCount = std::size_t;
-  auto nTargetWeights = std::accumulate(
-      blend_shape_data_.channels.begin(), blend_shape_data_.channels.end(),
-      static_cast<TargetWeightsCount>(0),
-      [](TargetWeightsCount sum_, const auto &channel_) {
-        return sum_ + channel_.targetShapes.size();
-      });
+  auto nTargetWeights = blend_shape_data_.shape_count();
 
   const auto nFrames = static_cast<decltype(MorphAnimation::times)::size_type>(
       anim_range_.frames_count());
@@ -330,22 +326,27 @@ SceneConverter::_extractWeightsAnimation(
   morphAnimation.values.resize(nTargetWeights * nFrames);
 
   auto extractFrame =
-      [](decltype(MorphAnimation::values)::iterator out_weights_,
-         fbxsdk::FbxTime time_, fbxsdk::FbxAnimCurve *shape_channel_,
-         const decltype(FbxBlendShapeData::Channel::targetShapes)
-             &target_shapes_) {
+      [this](decltype(MorphAnimation::values)::iterator out_weights_,
+             fbxsdk::FbxTime time_, fbxsdk::FbxAnimCurve *shape_channel_curve_,
+             const decltype(FbxBlendShapeData::Channel::targetShapes)
+                 &target_shapes_) {
         if (target_shapes_.empty()) {
           return;
         }
 
         constexpr auto zeroWeight = static_cast<WeightType>(0.0);
         constexpr fbxsdk::FbxDouble defaultWeight = 0;
+        const auto channelWeight = shape_channel_curve_
+                                       ? shape_channel_curve_->Evaluate(time_)
+                                       : defaultWeight;
 
-        const auto iFrameWeightsBeg = out_weights_;
-        const auto iFrameWeightsEnd = iFrameWeightsBeg + target_shapes_.size();
-
-        const auto animWeight =
-            shape_channel_ ? shape_channel_->Evaluate(time_) : defaultWeight;
+        const auto addWeight = [&](auto channel_shape_index_,
+                                   fbxsdk::FbxDouble weight_) {
+          const auto shapeIndex =
+              std::get<0>(target_shapes_[channel_shape_index_]);
+          assert(channel_shape_index_ < target_shapes_.size());
+          *(out_weights_ + shapeIndex) += weight_;
+        };
 
         // The target shape 'fullWeight' values are
         // a strictly ascending list of floats (between 0 and 100), forming a
@@ -356,13 +357,14 @@ SceneConverter::_extractWeightsAnimation(
                               }));
         const auto firstNotLessThan = std::find_if(
             target_shapes_.begin(), target_shapes_.end(),
-            [animWeight](
-                const std::decay_t<decltype(target_shapes_)>::value_type
-                    &target_) { return std::get<1>(target_) >= animWeight; });
+            [channelWeight](
+                const std::decay_t<decltype(target_shapes_)>::value_type &
+                    target_) { return std::get<1>(target_) >= channelWeight; });
 
         if (firstNotLessThan == target_shapes_.begin()) {
-          const auto firstThreshold = std::get<1>(target_shapes_.front());
-          *iFrameWeightsBeg = animWeight / firstThreshold;
+          addWeight(0, channelWeight / std::get<1>(target_shapes_.front()));
+        } else if (firstNotLessThan == target_shapes_.end()) {
+          addWeight(target_shapes_.size() - 1, 1.0);
         } else if (firstNotLessThan != target_shapes_.end()) {
           const auto iRight = firstNotLessThan - target_shapes_.begin();
           assert(iRight);
@@ -370,9 +372,9 @@ SceneConverter::_extractWeightsAnimation(
           const auto leftWeight = std::get<1>(target_shapes_[iLeft]);
           const auto rightWeight = std::get<1>(target_shapes_[iRight]);
           const auto ratio =
-              (animWeight - leftWeight) / (rightWeight - leftWeight);
-          iFrameWeightsBeg[iLeft] = static_cast<WeightType>(ratio);
-          iFrameWeightsBeg[iRight] = static_cast<WeightType>(1.0 - ratio);
+              (channelWeight - leftWeight) / (rightWeight - leftWeight);
+          addWeight(iLeft, 1.0 - ratio);
+          addWeight(iRight, ratio);
         }
       };
 
@@ -383,16 +385,18 @@ SceneConverter::_extractWeightsAnimation(
 
     morphAnimation.times[iFrame] = time.GetSecondDouble() - firstTimeDouble;
 
-    TargetWeightsCount offset = 0;
-    for (const auto &[blendShapeIndex, blendShapeChannelIndex, name,
-                      deformPercent, targetShapes] :
-         blend_shape_data_.channels) {
-      auto shapeChannel = fbx_mesh_.GetShapeChannel(
-          blendShapeIndex, blendShapeChannelIndex, &fbx_anim_layer_);
+    for (const auto &[blendShapeChannelIndex, name, deformPercent,
+                      targetShapes] : blend_shape_data_.channels()) {
+      auto channel = blend_shape_data_.blend_shape()->GetBlendShapeChannel(
+          blendShapeChannelIndex);
+
+      auto shapeChannel =
+          fbx_mesh_.GetShapeChannel(blend_shape_data_.blend_shape_index(),
+                                    blendShapeChannelIndex, &fbx_anim_layer_);
+
       const auto outWeights =
-          morphAnimation.values.begin() + nTargetWeights * iFrame + offset;
+          morphAnimation.values.begin() + nTargetWeights * iFrame;
       extractFrame(outWeights, time, shapeChannel, targetShapes);
-      offset += targetShapes.size();
     }
   }
 

@@ -38,47 +38,62 @@ public:
   void convert();
 
 private:
-
   std::map<fbxsdk::FbxNode *, std::string> nodeMeshMap;
 
-  struct FbxBlendShapeData {
-    struct Channel {
-      /// <summary>
-      /// Blend shape deformer index.
-      /// </summary>
-      int blendShapeIndex;
+  class FbxBlendShapeData {
+  public:
+    using shape_index = std::vector<fbxsdk::FbxShape *>::size_type;
 
-      /// <summary>
-      /// Channel index.
-      /// </summary>
-      int blendShapeChannelIndex;
-      std::string name;
-      fbxsdk::FbxDouble deformPercent;
-      std::vector<std::tuple<fbxsdk::FbxShape *, fbxsdk::FbxDouble>>
-          targetShapes;
+    struct Channel {
+        /// <summary>
+        /// Channel index.
+        /// </summary>
+        int blendShapeChannelIndex;
+        std::string name;
+        fbxsdk::FbxDouble deformPercent;
+        std::vector<std::tuple<shape_index, fbxsdk::FbxDouble>> targetShapes;
     };
 
-    std::vector<Channel> channels;
+    FbxBlendShapeData(fbxsdk::FbxBlendShape &blend_shape_,
+                      int blend_shape_index_);
 
-    std::vector<fbxsdk::FbxShape *> getShapes() const {
-      std::vector<fbxsdk::FbxShape *> shapes;
-      for (const auto &channelData : channels) {
-        for (auto &[fbxShape, weight] : channelData.targetShapes) {
-          shapes.push_back(fbxShape);
-        }
-      }
-      return shapes;
+    const auto& blend_shape() const {
+        return _blendShape;
     }
 
-    std::vector<std::string> getShapeNames() const {
-      std::vector<std::string> shapeNames;
-      for (const auto &channelData : channels) {
-        for (auto &[fbxShape, weight] : channelData.targetShapes) {
-          shapeNames.push_back(channelData.name);
-        }
-      }
-      return shapeNames;
+    /// <summary>
+    /// Blend shape deformer index.
+    /// </summary>
+    int blend_shape_index() const {
+      return this->_blendShapeIndex;
     }
+
+    bool empty() const {
+      return this->_channels.empty();
+    }
+
+    shape_index shape_count() const {
+      return this->_shapes.size();
+    }
+
+    bool has_same_construct_with(const FbxBlendShapeData &that_) const;
+
+    const fbxsdk::FbxShape &get_fbx_shape(shape_index shape_index_) const {
+      return *_shapes[shape_index_];
+    }
+
+    const auto &channels() const {
+      return this->_channels;
+    }
+
+  private:
+    int _blendShapeIndex;
+
+    fbxsdk::FbxBlendShape *_blendShape;
+
+    std::vector<fbxsdk::FbxShape *> _shapes;
+
+    std::vector<Channel> _channels;
   };
 
   struct MeshSkinData {
@@ -338,13 +353,13 @@ private:
       std::string_view mesh_name_,
       fbxsdk::FbxMatrix *vertex_transform_,
       fbxsdk::FbxMatrix *normal_transform_,
-      std::span<fbxsdk::FbxShape *> fbx_shapes_,
+      std::span<const fbxsdk::FbxShape *> fbx_shapes_,
       std::span<MeshSkinData::InfluenceChannel> skin_influence_channels_,
       MaterialUsage &material_usage_);
 
   FbxMeshVertexLayout _getFbxMeshVertexLayout(
       fbxsdk::FbxMesh &fbx_mesh_,
-      std::span<fbxsdk::FbxShape *> fbx_shapes_,
+      std::span<const fbxsdk::FbxShape *> fbx_shapes_,
       std::span<MeshSkinData::InfluenceChannel> skin_influence_channels_);
 
   fx::gltf::Primitive _createPrimitive(std::list<VertexBulk> &bulks_,
