@@ -38,8 +38,13 @@ set (BeeCoreSource
 add_library (BeeCore SHARED ${BeeCoreSource})
 
 set_target_properties (BeeCore PROPERTIES CXX_STANDARD 20)
+if (APPLE)
+    set_target_properties (BeeCore PROPERTIES INSTALL_RPATH "@loader_path")
+elseif (UNIX)
+    set_target_properties (BeeCore PROPERTIES INSTALL_RPATH "$ORIGIN")
+endif ()
 
-target_compile_definitions (BeeCore PRIVATE BEE_EXPORT FBXSDK_SHARED NOMINMAX HAVE_SNPRINTF)
+target_compile_definitions (BeeCore PRIVATE BEE_EXPORT FBXSDK_SHARED NOMINMAX HAVE_SNPRINTF GLM_ENABLE_EXPERIMENTAL)
 
 target_include_directories (BeeCore PRIVATE ${BeeCoreIncludeDirectories} "${CMAKE_CURRENT_LIST_DIR}/fx/include")
 
@@ -79,41 +84,46 @@ if (CMAKE_CXX_COMPILER_ID STREQUAL "MSVC")
         set (FbxSdkDynLibraries "${FbxSdkHome}/lib/vs2017/x64/${FbxSdkConfiguration}/libfbxsdk.dll")
     endif ()
 elseif (CMAKE_CXX_COMPILER_ID STREQUAL "Clang" OR CMAKE_CXX_COMPILER_ID STREQUAL "AppleClang")
-    set (FbxSdkLibraries "${FbxSdkHome}/lib/clang/${FbxSdkConfiguration}/libfbxsdk.a")
-    set (FbxSdkDynLibraries "${FbxSdkHome}/lib/clang/${FbxSdkConfiguration}/libfbxsdk.dylib")
+    set (FbxSdkLibraries "${FbxSdkHome}/lib/clang/${FbxSdkConfiguration}/libfbxsdk.dylib")
+    set (FbxSdkDynLibraries "${FbxSdkLibraries}")
 elseif (CMAKE_CXX_COMPILER_ID STREQUAL "GNU")
-    set (FbxSdkLibraries "${FbxSdkHome}/lib/gcc/x64/${FbxSdkConfiguration}/libfbxsdk.a")
-    set (FbxSdkDynLibraries "${FbxSdkHome}/lib/gcc/x64/${FbxSdkConfiguration}/libfbxsdk.so")
+    set (FbxSdkLibraries "${FbxSdkHome}/lib/gcc/x64/${FbxSdkConfiguration}/libfbxsdk.so")
+    set (FbxSdkDynLibraries "${FbxSdkLibraries}")
 else ()
     message (FATAL_ERROR "Can not decide FBX SDK library to use cause of unknown C++ compiler ID: ${CMAKE_CXX_COMPILER_ID}")
 endif ()
 message (STATUS "FBX SDK include directories: ${FbxSdkIncludeDirectories}")
 message (STATUS "FBX SDK libraries: ${FbxSdkLibraries}")
 message (STATUS "FBX SDK dynamic libraries: ${FbxSdkDynLibraries}")
+if (NOT EXISTS "${FbxSdkIncludeDirectories}/fbxsdk.h")
+    message (FATAL_ERROR "FBX SDK header not found: ${FbxSdkIncludeDirectories}/fbxsdk.h")
+endif ()
+if (NOT EXISTS "${FbxSdkLibraries}")
+    message (FATAL_ERROR "FBX SDK library not found: ${FbxSdkLibraries}")
+endif ()
+if (NOT EXISTS "${FbxSdkDynLibraries}")
+    message (FATAL_ERROR "FBX SDK dynamic library not found: ${FbxSdkDynLibraries}")
+endif ()
 
 # `LibXml2`, `ZLIB` are required by FBX SDK
 # https://forums.autodesk.com/t5/fbx-forum/cmake-error-quot-undefined-symbols-for-architecture-x86-64-quot/td-p/8992522
 find_package(LibXml2 REQUIRED)
-target_include_directories(BeeCore PRIVATE ${LIBXML2_INCLUDE_DIR})
-if (CMAKE_CXX_COMPILER_ID STREQUAL "GNU")
-    # I don't know why on Ubuntu "PUBLIC" is needed, otherwise there're link errors.
-    target_link_libraries(BeeCore PUBLIC LibXml2::LibXml2)
-else ()
-    target_link_libraries(BeeCore PRIVATE ${LIBXML2_LIBRARIES})
-endif ()
 find_package(ZLIB REQUIRED)
-target_link_libraries(BeeCore PRIVATE ZLIB::ZLIB)
+target_include_directories(BeeCore PRIVATE ${LIBXML2_INCLUDE_DIR})
+target_include_directories (BeeCore PRIVATE ${FbxSdkIncludeDirectories})
+
+if (CMAKE_CXX_COMPILER_ID STREQUAL "GNU")
+    # GNU ld needs the FBX SDK dependency group on final executable link lines.
+    target_link_libraries(BeeCore PUBLIC ${FbxSdkLibraries} LibXml2::LibXml2 ZLIB::ZLIB)
+else ()
+    target_link_libraries(BeeCore PRIVATE ${FbxSdkLibraries} ${LIBXML2_LIBRARIES} ZLIB::ZLIB)
+endif ()
 
 if (APPLE)
     find_library (CF_FRAMEWORK CoreFoundation)
     message("CoreFoundation Framework: ${CF_FRAMEWORK}")
     target_link_libraries(BeeCore PRIVATE ${CF_FRAMEWORK})
 endif()
-
-target_include_directories (BeeCore PRIVATE ${FbxSdkIncludeDirectories})
-
-target_link_libraries (BeeCore PRIVATE ${FbxSdkLibraries})
-
 find_package(nlohmann_json CONFIG REQUIRED)
 target_link_libraries(BeeCore PRIVATE nlohmann_json nlohmann_json::nlohmann_json)
 

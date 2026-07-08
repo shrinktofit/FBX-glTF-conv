@@ -4,6 +4,7 @@
 #include <bee/Convert/fbxsdk/Spreader.h>
 #include <bee/Convert/fbxsdk/String.h>
 #include <bee/UntypedVertex.h>
+#include <algorithm>
 #include <fmt/format.h>
 #include <range/v3/all.hpp>
 
@@ -184,7 +185,13 @@ std::string SceneConverter::_makeMeshName(const std::vector<fbxsdk::FbxMesh *> &
       ranges::back_inserter(parts));
 
   // Sort
-  ranges::sort(parts, [](const auto &name1_, const auto &name2_) { return name1_ < name2_; });
+  ranges::sort(parts, [](const auto &name1_, const auto &name2_) {
+    return std::lexicographical_compare(
+        name1_.begin(), name1_.end(), name2_.begin(), name2_.end(),
+        [](const unsigned char lhs_, const unsigned char rhs_) {
+          return lhs_ < rhs_;
+        });
+  });
 
   // Dedup
   {

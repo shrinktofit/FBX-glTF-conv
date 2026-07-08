@@ -1,67 +1,72 @@
 name: Pull Request Test
 
-on: [pull_request]
+on:
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
 
 jobs:
-  test:
-    name: Test on Windows
-    runs-on: windows-latest
+  build:
+    name: Build ${{ matrix.label }}
+    runs-on: ${{ matrix.runner }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - label: Windows
+            os_name: win32
+            runner: windows-2022
+            artifact_path: FBX-glTF-conv-ci-win32.tgz
+          - label: macOS
+            os_name: darwin
+            runner: macos-15-intel
+            artifact_path: FBX-glTF-conv-ci-darwin.tgz
+          - label: Linux
+            os_name: linux
+            runner: ubuntu-22.04
+            artifact_path: FBX-glTF-conv-ci-linux.tgz
+
     steps:
-      - uses: actions/checkout@v2
+      - uses: actions/checkout@v4
         name: Checkout
-  
+
       - name: Build
         shell: bash
         run: |
-          CI/build.sh
-      
-      - name: Run Core Test
+          CI/build.sh -ArtifactPath "${{ matrix.artifact_path }}"
+
+      - name: Print install tree
+        shell: bash
+        run: |
+          find out/install -maxdepth 4 -type f -print
+
+      - name: Run Windows tests
+        if: matrix.os_name == 'win32'
         shell: pwsh
         run: |
           out/build/Release/Release/FBX-glTF-conv-core-test.exe
-
-      - name: Run CLI Test
-        shell: pwsh
-        run: |
           out/build/Release/Release/FBX-glTF-conv-test.exe
+          out/install/Release/bin/FBX-glTF-conv.exe --help
 
-  test_on_mac:
-    name: Test on macOS
-    runs-on: macos-11
-    steps:
-      - uses: actions/checkout@v2
-        name: 
-        
-      - name: Set up Xcode
-        uses: maxim-lobanov/setup-xcode@v1
-        with: 
-          xcode-version: latest-stable
-  
-      - name: Build
+      - name: Run Linux tests
+        if: matrix.os_name == 'linux'
         shell: bash
         run: |
-          CI/build.sh
+          ./out/build/Release/FBX-glTF-conv-core-test
+          ./out/build/Release/FBX-glTF-conv-test
+          ./out/install/Release/bin/FBX-glTF-conv --help
 
-      - name: Upload Artifacts
-        uses: actions/upload-artifact@v3
+      - name: Run macOS smoke test
+        if: matrix.os_name == 'darwin'
+        shell: bash
+        run: |
+          chmod +x ./out/install/Release/bin/FBX-glTF-conv
+          ./out/install/Release/bin/FBX-glTF-conv --help
+
+      - name: Upload binary artifact
+        uses: actions/upload-artifact@v4
         with:
-          name: macos-files
-          path: out/install/**/*
-
-  test_on_min_supported_mac:
-     name: Test on Min Supported macOS
-     runs-on: macos-11
-     needs: test_on_mac
-     steps:
-       - name: Download Artifacts
-         uses: actions/download-artifact@v3
-         with:
-           name: macos-files
-           path: out
-       - name: Run Tests
-         shell: pwsh
-         run: |
-           ls out
-           chmod 777 ./out/Release/bin/FBX-glTF-conv
-           ./out/Release/bin/FBX-glTF-conv --help
-
+          name: binary-${{ matrix.os_name }}
+          path: ${{ matrix.artifact_path }}

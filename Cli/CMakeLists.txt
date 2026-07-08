@@ -23,7 +23,6 @@ if (POLYFILLS_STD_FILESYSTEM)
 endif ()
 
 target_link_libraries (FBX-glTF-conv-lib PUBLIC BeeCore)
-
 find_package(cxxopts CONFIG REQUIRED)
 target_link_libraries(FBX-glTF-conv-lib PUBLIC cxxopts::cxxopts)
 
@@ -51,7 +50,6 @@ set_target_properties (FBX-glTF-conv PROPERTIES CXX_STANDARD 20)
 
 target_link_libraries(FBX-glTF-conv PRIVATE FBX-glTF-conv-lib)
 target_link_libraries(FBX-glTF-conv PRIVATE fmt::fmt-header-only)
-
 # Set @rpath so executable can find .dylib/.so
 # See https://gitlab.kitware.com/cmake/community/-/wikis/doc/cmake/RPATH-handling#recommendations
 # and also https://stackoverflow.com/a/61020959
