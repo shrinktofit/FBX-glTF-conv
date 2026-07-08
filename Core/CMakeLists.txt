@@ -108,18 +108,15 @@ endif ()
 # `LibXml2`, `ZLIB` are required by FBX SDK
 # https://forums.autodesk.com/t5/fbx-forum/cmake-error-quot-undefined-symbols-for-architecture-x86-64-quot/td-p/8992522
 find_package(LibXml2 REQUIRED)
-target_include_directories(BeeCore PRIVATE ${LIBXML2_INCLUDE_DIR})
-if (CMAKE_CXX_COMPILER_ID STREQUAL "GNU")
-    # I don't know why on Ubuntu "PUBLIC" is needed, otherwise there're link errors.
-    target_link_libraries(BeeCore PUBLIC LibXml2::LibXml2)
-else ()
-    target_link_libraries(BeeCore PRIVATE ${LIBXML2_LIBRARIES})
-endif ()
 find_package(ZLIB REQUIRED)
+target_include_directories(BeeCore PRIVATE ${LIBXML2_INCLUDE_DIR})
+target_include_directories (BeeCore PRIVATE ${FbxSdkIncludeDirectories})
+
 if (CMAKE_CXX_COMPILER_ID STREQUAL "GNU")
-    target_link_libraries(BeeCore PUBLIC ZLIB::ZLIB)
+    # GNU ld needs the FBX SDK dependency group on final executable link lines.
+    target_link_libraries(BeeCore PUBLIC ${FbxSdkLibraries} LibXml2::LibXml2 ZLIB::ZLIB)
 else ()
-    target_link_libraries(BeeCore PRIVATE ZLIB::ZLIB)
+    target_link_libraries(BeeCore PRIVATE ${FbxSdkLibraries} ${LIBXML2_LIBRARIES} ZLIB::ZLIB)
 endif ()
 
 if (APPLE)
@@ -127,11 +124,6 @@ if (APPLE)
     message("CoreFoundation Framework: ${CF_FRAMEWORK}")
     target_link_libraries(BeeCore PRIVATE ${CF_FRAMEWORK})
 endif()
-
-target_include_directories (BeeCore PRIVATE ${FbxSdkIncludeDirectories})
-
-target_link_libraries (BeeCore PRIVATE ${FbxSdkLibraries})
-
 find_package(nlohmann_json CONFIG REQUIRED)
 target_link_libraries(BeeCore PRIVATE nlohmann_json nlohmann_json::nlohmann_json)
 
