@@ -1,20 +1,27 @@
 name: Release
+
 on:
   workflow_dispatch:
     inputs:
       version:
-        description: 'Version'
+        description: Version
         required: true
         type: string
+
+permissions:
+  contents: write
+
 jobs:
   get_release_info_job:
     name: Get Release Info
-    runs-on: windows-latest
+    runs-on: windows-2022
     outputs:
       version: ${{ steps.get_release_info.outputs.version }}
       release_upload_url: ${{ steps.create_release.outputs.upload_url }}
     steps:
-      - uses: actions/checkout@v2
+      - uses: actions/checkout@v4
+        name: Checkout
+
       - id: get_release_info
         name: Get Release Info
         shell: pwsh
@@ -27,22 +34,23 @@ jobs:
           Version: $version
           Tag Name: $tagName
           "@
-          Write-Output "::set-output name=version::$version"
-          Write-Output "::set-output name=tag_name::$tagName"
-          Write-Output "::set-output name=release_name::$releaseName"
+          "version=$version" >> $env:GITHUB_OUTPUT
+          "tag_name=$tagName" >> $env:GITHUB_OUTPUT
+          "release_name=$releaseName" >> $env:GITHUB_OUTPUT
+
       - id: create_release
         uses: actions/create-release@v1
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
-          tag_name: ${{steps.get_release_info.outputs.tag_name}}
-          release_name: ${{steps.get_release_info.outputs.release_name}}
+          tag_name: ${{ steps.get_release_info.outputs.tag_name }}
+          release_name: ${{ steps.get_release_info.outputs.release_name }}
           draft: false
           prerelease: false
 
   release_windows_job:
     name: Release Windows
-    runs-on: windows-latest
+    runs-on: windows-2022
     needs: get_release_info_job
     steps:
       - name: Print Debug Info
@@ -52,18 +60,23 @@ jobs:
           Version: ${{ needs.get_release_info_job.outputs.version }}
           Release Upload URL: ${{ needs.get_release_info_job.outputs.release_upload_url }}
           "@
-      - uses: actions/checkout@v2
+
+      - uses: actions/checkout@v4
+        name: Checkout
+
       - id: get_this_release_info
         shell: pwsh
         run: |
           #Requires -Version "6.1"
-          $osName = if ($IsWindows) { "win32" } elseif ($IsLinux) { "ubuntu" } else { "darwin" }
+          $osName = "win32"
           $artifactPath = "FBX-glTF-conv-${{ needs.get_release_info_job.outputs.version }}-$osName.tgz"
-          Write-Output "::set-output name=artifact_path::$artifactPath"
+          "artifact_path=$artifactPath" >> $env:GITHUB_OUTPUT
+
       - id: build
         name: Build
-        run: CI/build.sh -Version "${{ needs.get_release_info_job.outputs.version }}" -ArtifactPath "${{ steps.get_this_release_info.outputs.artifact_path }}"
         shell: bash
+        run: CI/build.sh -Version "${{ needs.get_release_info_job.outputs.version }}" -ArtifactPath "${{ steps.get_this_release_info.outputs.artifact_path }}"
+
       - id: upload-release-asset
         name: Upload Release Asset
         uses: actions/upload-release-asset@v1
@@ -73,11 +86,11 @@ jobs:
           upload_url: ${{ needs.get_release_info_job.outputs.release_upload_url }}
           asset_path: ${{ steps.get_this_release_info.outputs.artifact_path }}
           asset_name: ${{ steps.get_this_release_info.outputs.artifact_path }}
-          asset_content_type: application/zip
+          asset_content_type: application/gzip
 
   release_darwin_job:
     name: Release MacOS
-    runs-on: macos-11
+    runs-on: macos-15-intel
     needs: get_release_info_job
     steps:
       - name: Print Debug Info
@@ -87,18 +100,23 @@ jobs:
           Version: ${{ needs.get_release_info_job.outputs.version }}
           Release Upload URL: ${{ needs.get_release_info_job.outputs.release_upload_url }}
           "@
-      - uses: actions/checkout@v2
+
+      - uses: actions/checkout@v4
+        name: Checkout
+
       - id: get_this_release_info
         shell: pwsh
         run: |
           #Requires -Version "6.1"
-          $osName = if ($IsWindows) { "win32" } elseif ($IsLinux) { "ubuntu" } else { "darwin" }
+          $osName = "darwin"
           $artifactPath = "FBX-glTF-conv-${{ needs.get_release_info_job.outputs.version }}-$osName.tgz"
-          Write-Output "::set-output name=artifact_path::$artifactPath"
+          "artifact_path=$artifactPath" >> $env:GITHUB_OUTPUT
+
       - id: build
         name: Build
-        run: CI/build.sh -Version "${{ needs.get_release_info_job.outputs.version }}" -ArtifactPath "${{ steps.get_this_release_info.outputs.artifact_path }}"
         shell: bash
+        run: CI/build.sh -Version "${{ needs.get_release_info_job.outputs.version }}" -ArtifactPath "${{ steps.get_this_release_info.outputs.artifact_path }}"
+
       - id: upload-release-asset
         name: Upload Release Asset
         uses: actions/upload-release-asset@v1
@@ -108,11 +126,11 @@ jobs:
           upload_url: ${{ needs.get_release_info_job.outputs.release_upload_url }}
           asset_path: ${{ steps.get_this_release_info.outputs.artifact_path }}
           asset_name: ${{ steps.get_this_release_info.outputs.artifact_path }}
-          asset_content_type: application/zip
+          asset_content_type: application/gzip
 
-  release_types_job:
-    name: Release TypeScript Declaration Files
-    runs-on: windows-latest
+  release_linux_job:
+    name: Release Linux
+    runs-on: ubuntu-22.04
     needs: get_release_info_job
     steps:
       - name: Print Debug Info
@@ -122,17 +140,62 @@ jobs:
           Version: ${{ needs.get_release_info_job.outputs.version }}
           Release Upload URL: ${{ needs.get_release_info_job.outputs.release_upload_url }}
           "@
-      - uses: actions/checkout@v2
+
+      - uses: actions/checkout@v4
+        name: Checkout
+
+      - id: get_this_release_info
+        shell: pwsh
+        run: |
+          #Requires -Version "6.1"
+          $osName = "linux"
+          $artifactPath = "FBX-glTF-conv-${{ needs.get_release_info_job.outputs.version }}-$osName.tgz"
+          "artifact_path=$artifactPath" >> $env:GITHUB_OUTPUT
+
+      - id: build
+        name: Build
+        shell: bash
+        run: CI/build.sh -Version "${{ needs.get_release_info_job.outputs.version }}" -ArtifactPath "${{ steps.get_this_release_info.outputs.artifact_path }}"
+
+      - id: upload-release-asset
+        name: Upload Release Asset
+        uses: actions/upload-release-asset@v1
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          upload_url: ${{ needs.get_release_info_job.outputs.release_upload_url }}
+          asset_path: ${{ steps.get_this_release_info.outputs.artifact_path }}
+          asset_name: ${{ steps.get_this_release_info.outputs.artifact_path }}
+          asset_content_type: application/gzip
+
+  release_types_job:
+    name: Release TypeScript Declaration Files
+    runs-on: windows-2022
+    needs: get_release_info_job
+    steps:
+      - name: Print Debug Info
+        shell: pwsh
+        run: |
+          Write-Host @"
+          Version: ${{ needs.get_release_info_job.outputs.version }}
+          Release Upload URL: ${{ needs.get_release_info_job.outputs.release_upload_url }}
+          "@
+
+      - uses: actions/checkout@v4
+        name: Checkout
+
       - id: get_this_release_info
         shell: pwsh
         run: |
           #Requires -Version "6.1"
           $artifactPath = "FBX-glTF-conv-${{ needs.get_release_info_job.outputs.version }}-types.tgz"
-          Write-Output "::set-output name=artifact_path::$artifactPath"
+          "artifact_path=$artifactPath" >> $env:GITHUB_OUTPUT
+
       - id: build
         name: Build
-        run: tar -czvf "${{ steps.get_this_release_info.outputs.artifact_path }}" -C types . 
         shell: bash
+        run: tar -czvf "${{ steps.get_this_release_info.outputs.artifact_path }}" -C types .
+
       - id: upload-release-asset
         name: Upload Release Asset
         uses: actions/upload-release-asset@v1
@@ -142,4 +205,4 @@ jobs:
           upload_url: ${{ needs.get_release_info_job.outputs.release_upload_url }}
           asset_path: ${{ steps.get_this_release_info.outputs.artifact_path }}
           asset_name: ${{ steps.get_this_release_info.outputs.artifact_path }}
-          asset_content_type: application/zip
+          asset_content_type: application/gzip

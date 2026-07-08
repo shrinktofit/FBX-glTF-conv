@@ -1,4 +1,5 @@
 #!/bin/bash
+set -e
 
 IsWindows=false
 IsMacOS=false
@@ -75,47 +76,90 @@ installVcpkg() {
     fi
 }
 
+getVcpkgTriplet() {
+    if [ "$IsWindows" = true ]; then
+        echo "x64-windows"
+    elif [ "$IsLinux" = true ]; then
+        echo "x64-linux"
+    else
+        echo ""
+    fi
+}
+
 downloadFile() {
     url="$1"
     dest="$2"
-    
-    file=$(basename "$dest")
-    dir=$(dirname "$dest")
+    unixDest=${dest//\\//}
+
+    if [ -z "$url" ]; then
+        echo "Missing download URL for $unixDest."
+        exit 1
+    fi
+
+    file=$(basename "$unixDest")
+    dir=$(dirname "$unixDest")
+    tmp="$dir/$file.download"
     mkdir -p "$dir"
-    
-    while true; do
-        curl -L --user-agent "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36" -o "$file" "$url"
-        ret=$?
-        if [ $ret -eq 0 ]; then
-            mv "$file" "$dest"
-            break
+
+    curl --fail --location --retry 3 --retry-delay 5 \
+        --user-agent "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36" \
+        -o "$tmp" "$url"
+
+    if [ ! -s "$tmp" ]; then
+        echo "Downloaded file is empty: $url"
+        exit 1
+    fi
+
+    mv "$tmp" "$unixDest"
+}
+
+validateFbxSdkHome() {
+    home="$1"
+    if [ ! -f "$home/include/fbxsdk.h" ]; then
+        echo "FBX SDK installation is invalid: $home/include/fbxsdk.h is missing."
+        find "$(dirname "$home")" -maxdepth 3 -type f -name 'fbxsdk.h' -print || true
+        exit 1
+    fi
+}
+
+patchFbxSdkHeaders() {
+    home="$1"
+    redBlackTreeHeader="$home/include/fbxsdk/core/base/fbxredblacktree.h"
+    if [ -f "$redBlackTreeHeader" ] && grep -q 'mLefttChild' "$redBlackTreeHeader"; then
+        echo "Patching FBX SDK header typo: $redBlackTreeHeader"
+        if [ "$IsMacOS" = true ]; then
+            sudo sed -i '' 's/mLefttChild/mLeftChild/g' "$redBlackTreeHeader"
+        else
+            sed -i 's/mLefttChild/mLeftChild/g' "$redBlackTreeHeader"
         fi
-    done
+    fi
 }
 
 installFbxSdk() {
     fbxSdkHome=$(pwd)/fbxsdk/Home
+    fbxSdkValidateHome=$fbxSdkHome
     mkdir -p fbxsdk
 
     if [ "$IsWindows" = true ]; then
-        fbxSdkUrl='https://www.autodesk.com/content/dam/autodesk/www/adn/fbx/2020-2-1/fbx202021_fbxsdk_vs2019_win.exe'
-        fbxSdkWindowsInstaller="fbxsdk\\fbxsdk.exe"
+        fbxSdkUrl="https://damassets.autodesk.net/content/dam/autodesk/www/adn/fbx/2020-3-4/fbx202034_fbxsdk_vs2022_win.exe"
+        fbxSdkWindowsInstaller="fbxsdk/fbxsdk.exe"
+        fbxSdkWindowsInstallerForCmd="fbxsdk\\fbxsdk.exe"
 
         downloadFile "$fbxSdkUrl" "$fbxSdkWindowsInstaller"
         
         fbxSdkHome_unix=$fbxSdkHome
+        fbxSdkValidateHome=$fbxSdkHome_unix
         echo fbxSdkHome_unix=$fbxSdkHome_unix
 
         fbxSdkHome=$(cygpath -w $fbxSdkHome_unix)
 
         echo fbxSdkHome=$fbxSdkHome
 
-        cmd "/C CI\install-fbx-sdk.bat $fbxSdkWindowsInstaller $fbxSdkHome"
+        cmd "/C CI\install-fbx-sdk.bat $fbxSdkWindowsInstallerForCmd $fbxSdkHome"
         echo "Installation finished($fbxSdkHome)."
 
     elif [ "$IsMacOS" = true ]; then
-        fbxSdkUrl='https://www.autodesk.com/content/dam/autodesk/www/adn/fbx/2020-2-1/fbx202021_fbxsdk_clang_mac.pkg.tgz'
-        fbxSdkVersion='2020.2.1'
+        fbxSdkUrl="https://damassets.autodesk.net/content/dam/autodesk/www/adn/fbx/2020-3-4/fbx202034_fbxsdk_clang_mac.pkg.tgz"
         fbxSdkMacOSTarball='./fbxsdk/fbxsdk.pkg.tgz'
 
         downloadFile "$fbxSdkUrl" "$fbxSdkMacOSTarball"
@@ -124,16 +168,25 @@ installFbxSdk() {
         fbxSdkMacOSPkgFile=$(find fbxsdk -name '*.pkg' -type f)
         echo "FBX SDK MacOS pkg: $fbxSdkMacOSPkgFile"
         sudo installer -pkg "$fbxSdkMacOSPkgFile" -target /
-        ln -s "/Applications/Autodesk/FBX SDK/$fbxSdkVersion" fbxsdk/Home
+        fbxSdkInstalledDir=$(find "/Applications/Autodesk/FBX SDK" -mindepth 1 -maxdepth 1 -type d | sort | tail -n 1)
+        if [ -z "$fbxSdkInstalledDir" ]; then
+            echo "FBX SDK install directory was not found under /Applications/Autodesk/FBX SDK."
+            exit 1
+        fi
+        ln -s "$fbxSdkInstalledDir" fbxsdk/Home
     elif [ "$IsLinux" = true ]; then
-        fbxSdkUrl='https://www.autodesk.com/content/dam/autodesk/www/adn/fbx/2020-2-1/fbx202021_fbxsdk_linux.tar.gz'
+        fbxSdkUrl="https://damassets.autodesk.net/content/dam/autodesk/www/adn/fbx/2020-3-4/fbx202034_fbxsdk_linux.tar.gz"
         fbxSdkTarball=fbxsdk/fbxsdk.tar.gz
 
         echo "Downloading FBX SDK tar ball from $fbxSdkUrl ..."
         downloadFile "$fbxSdkUrl" "$fbxSdkTarball"
         tar -zxvf "$fbxSdkTarball" -C fbxsdk
 
-        fbxSdkInstallationProgram=fbxsdk/fbx202021_fbxsdk_linux
+        fbxSdkInstallationProgram=$(find fbxsdk -maxdepth 2 -type f -name 'fbx*_fbxsdk_linux' | head -n 1)
+        if [ -z "$fbxSdkInstallationProgram" ]; then
+            echo "FBX SDK Linux installer was not found in $fbxSdkTarball."
+            exit 1
+        fi
         chmod ugo+x "$fbxSdkInstallationProgram"
 
         fbxSdkHomeLocation="$HOME/fbxsdk/install"
@@ -144,12 +197,16 @@ installFbxSdk() {
         yes yes | "$fbxSdkInstallationProgram" "$fbxSdkHomeLocation"
         echo ''
 
+        fbxSdkHome="$fbxSdkHomeLocation"
+        fbxSdkValidateHome="$fbxSdkHomeLocation"
         echo "Installation finished($fbxSdkHomeLocation)."
     else
         echo 'FBXSDK is not available on target platform.'
         exit 1
     fi
 
+    validateFbxSdkHome "$fbxSdkValidateHome"
+    patchFbxSdkHeaders "$fbxSdkValidateHome"
     echo "$fbxSdkHome"
 }
 
@@ -167,8 +224,13 @@ installDependenciesForMacOS() {
 
 installDependenciesForOthers() {
     dependencies=('libxml2' 'zlib' 'fmt' 'nlohmann-json' 'glm' 'cppcodec' 'range-v3' 'cxxopts' 'doctest' 'utfcpp')
+    vcpkgTriplet=$(getVcpkgTriplet)
     for libName in "${dependencies[@]}"; do
-        ./vcpkg/vcpkg install "$libName"
+        if [ -n "$vcpkgTriplet" ]; then
+            ./vcpkg/vcpkg install --triplet="$vcpkgTriplet" "$libName"
+        else
+            ./vcpkg/vcpkg install "$libName"
+        fi
     done
 }
 
@@ -208,8 +270,10 @@ runCMake() {
             "${defineVersion}" \
             -S. -B"${cmakeBuildDir}"
     else
+        vcpkgTriplet=$(getVcpkgTriplet)
         cmake -DCMAKE_TOOLCHAIN_FILE="vcpkg/scripts/buildsystems/vcpkg.cmake" \
-                -DCMAKE_BUILD_TYPE=$"{buildType}" \
+                -DVCPKG_TARGET_TRIPLET="${vcpkgTriplet}" \
+                -DCMAKE_BUILD_TYPE="${buildType}" \
                 -DCMAKE_INSTALL_PREFIX="${cmakeInstallPrefix}/${buildType}" \
                 -DFbxSdkHome:STRING="${fbxSdkHome}" \
                 -DPOLYFILLS_STD_FILESYSTEM="${polyfillsStdFileSystem}" \
